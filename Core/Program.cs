@@ -1,4 +1,5 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using Core.Model;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.MSBuild;
@@ -8,6 +9,8 @@ MSBuildWorkspace workspace = MSBuildWorkspace.Create();
 // 注意：这里应该使用实际的解决方案路径
 var solution = await workspace.OpenSolutionAsync("E:\\czhworks\\TM.Scaffold\\Core6\\Core6.sln");
 
+var classList = new List<ClassInfoDto>();
+
 foreach(var project in solution.Projects)
 {
     Console.WriteLine($"项目名称: {project.Name}");
@@ -15,6 +18,8 @@ foreach(var project in solution.Projects)
 
     foreach (var tree in compilation.SyntaxTrees)
     {
+        // 假设你已经有一个SyntaxTree和SemanticModel
+        var semanticModel = compilation.GetSemanticModel(tree);
         // 解析命名空间、类名和类注释
         var root = tree.GetRoot();
         
@@ -25,23 +30,25 @@ foreach(var project in solution.Projects)
         foreach (var classDecl in classDeclarations)
         {
             var classSyntax = classDecl;
+            // 获取类的Symbol
+            var classSymbol = semanticModel.GetDeclaredSymbol(classSyntax);
+
+            var classDto = new ClassInfoDto
+            {
+                SourceCode = classSyntax.ToFullString(),
+                Id = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+            };
+            classList.Add(classDto);
             
-            // 获取命名空间
-            var namespaceName = GetNamespace(classSyntax);
-            
-            // 获取类名
-            var className = classSyntax.Identifier.Text;
-            
-            // 获取类注释
-            var classComments = GetClassComments(classSyntax);
-            
-            Console.WriteLine($"命名空间: {namespaceName}");
-            Console.WriteLine($"类名: {className}");
-            Console.WriteLine($"类注释: {classComments}");
-            Console.WriteLine("---");
+            // Console.WriteLine($"命名空间: {namespaceName}");
+            // Console.WriteLine($"类名: {className}");
+            // Console.WriteLine($"类注释: {classComments}");
+            // Console.WriteLine("---");
         }
     }
 }
+
+var i =1;
 
 string GetNamespace(ClassDeclarationSyntax classSyntax)
 {
