@@ -32,12 +32,29 @@ foreach(var project in solution.Projects)
             var classSyntax = classDecl;
             // 获取类的Symbol
             var classSymbol = semanticModel.GetDeclaredSymbol(classSyntax);
+            var comm = GetClassComments(classSyntax);
 
             var classDto = new ClassInfoDto
             {
                 SourceCode = classSyntax.ToFullString(),
-                Id = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                Comments = comm,
+                Id = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                Methods = new List<MethodInfoDto>()
             };
+            
+            // 获取类中的所有方法
+            var methodDeclarations = classSyntax.DescendantNodes().OfType<MethodDeclarationSyntax>();
+            foreach (var methodDecl in methodDeclarations)
+            {
+                var methodSymbol = semanticModel.GetDeclaredSymbol(methodDecl);
+                var methodDto = new MethodInfoDto
+                {
+                    SourceCode = methodDecl.ToFullString(),
+                    Id = methodSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                };
+                classDto.Methods.Add(methodDto);
+            }
+            
             classList.Add(classDto);
             
             // Console.WriteLine($"命名空间: {namespaceName}");
