@@ -32,14 +32,12 @@ foreach(var project in solution.Projects)
             var classSyntax = classDecl;
             // 获取类的Symbol
             var classSymbol = semanticModel.GetDeclaredSymbol(classSyntax);
-            var comm = GetClassComments(classSyntax);
-            var classDefinition = FormatClassDeclarationComplete(classSyntax);
 
             var classDto = new ClassInfoDto
             {
                 SourceCode = classSyntax.ToFullString(),
-                Comments = comm,
-                ClassDefinition = classDefinition,
+                Comments = GetClassComments(classSyntax),
+                ClassDefinition = FormatClassDeclarationComplete(classSyntax),
                 Id = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 Methods = new List<MethodInfoDto>()
             };
@@ -52,7 +50,9 @@ foreach(var project in solution.Projects)
                 var methodDto = new MethodInfoDto
                 {
                     SourceCode = methodDecl.ToFullString(),
-                    Id = methodSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                    Id = methodSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    Comments = GetMethodComments(methodDecl),
+                    MethodDefinition = FormatMethodDeclaration(methodDecl)
                 };
                 classDto.Methods.Add(methodDto);
             }
@@ -117,6 +117,58 @@ string FormatClassDeclarationComplete(ClassDeclarationSyntax classDecl)
     {
         var baseTypes = classDecl.BaseList.Types.Select(t => t.Type.ToString());
         parts.Add(": " + string.Join(", ", baseTypes));
+    }
+
+    return string.Join(" ", parts.Where(p => !string.IsNullOrEmpty(p)));
+}
+
+string GetMethodComments(MethodDeclarationSyntax methodDecl)
+{
+    var comments = new StringBuilder();
+    
+    // 获取方法声明节点的前导注释
+    var leadingTrivia = methodDecl.GetLeadingTrivia();
+    foreach (var trivia in leadingTrivia)
+    {
+        if (trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) || 
+            trivia.IsKind(SyntaxKind.MultiLineCommentTrivia) || 
+            trivia.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia) ||
+            trivia.IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia))
+        {
+            comments.AppendLine(trivia.ToFullString().Trim());
+        }
+    }
+    
+    return comments.ToString().Trim() ?? "无注释";
+}
+
+string FormatMethodDeclaration(MethodDeclarationSyntax methodDecl)
+{
+    var parts = new List<string>();
+
+    // 修饰符
+    var modifiers = methodDecl.Modifiers.Select(m => m.Text);
+    parts.AddRange(modifiers);
+
+    // 返回类型
+    if (methodDecl.ReturnType != null)
+    {
+        parts.Add(methodDecl.ReturnType.ToString());
+    }
+
+    // 方法名
+    parts.Add(methodDecl.Identifier.Text);
+
+    // 参数列表
+    if (methodDecl.ParameterList != null)
+    {
+        parts.Add(methodDecl.ParameterList.ToString());
+    }
+
+    // 泛型参数（如果存在）
+    if (methodDecl.TypeParameterList != null)
+    {
+        parts.Add(methodDecl.TypeParameterList.ToString());
     }
 
     return string.Join(" ", parts.Where(p => !string.IsNullOrEmpty(p)));
