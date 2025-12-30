@@ -33,11 +33,13 @@ foreach(var project in solution.Projects)
             // 获取类的Symbol
             var classSymbol = semanticModel.GetDeclaredSymbol(classSyntax);
             var comm = GetClassComments(classSyntax);
+            var classDefinition = FormatClassDeclarationComplete(classSyntax);
 
             var classDto = new ClassInfoDto
             {
                 SourceCode = classSyntax.ToFullString(),
                 Comments = comm,
+                ClassDefinition = classDefinition,
                 Id = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 Methods = new List<MethodInfoDto>()
             };
@@ -94,4 +96,28 @@ string GetClassComments(ClassDeclarationSyntax classSyntax)
     }
     
     return comments.ToString().Trim() ?? "无注释";
+}
+
+string FormatClassDeclarationComplete(ClassDeclarationSyntax classDecl)
+{
+    var parts = new List<string>();
+
+    // 修饰符
+    var modifiers = classDecl.Modifiers.Select(m => m.Text);
+    parts.AddRange(modifiers);
+
+    // class 关键字
+    parts.Add("class");
+
+    // 类名
+    parts.Add(classDecl.Identifier.Text);
+
+    // 基类
+    if (classDecl.BaseList != null && classDecl.BaseList.Types.Count > 0)
+    {
+        var baseTypes = classDecl.BaseList.Types.Select(t => t.Type.ToString());
+        parts.Add(": " + string.Join(", ", baseTypes));
+    }
+
+    return string.Join(" ", parts.Where(p => !string.IsNullOrEmpty(p)));
 }
