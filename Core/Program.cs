@@ -6,7 +6,7 @@ using System.Text;
 
 MSBuildWorkspace workspace = MSBuildWorkspace.Create();
 // 注意：这里应该使用实际的解决方案路径
-var solution = await workspace.OpenSolutionAsync("D:\\work\\TM.Scaffold\\Core6\\Core6.sln");
+var solution = await workspace.OpenSolutionAsync("E:\\czhworks\\TM.Scaffold\\Core6\\Core6.sln");
 
 foreach(var project in solution.Projects)
 {
