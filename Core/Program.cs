@@ -2,12 +2,13 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.MSBuild;
 using System.Text;
 
 MSBuildWorkspace workspace = MSBuildWorkspace.Create();
 // 注意：这里应该使用实际的解决方案路径
-var solution = await workspace.OpenSolutionAsync("D:\\work\\TM.Scaffold\\WebApiScaffold\\TM.Scaffold.Project.sln");
+var solution = await workspace.OpenSolutionAsync("E:\\czhworks\\TM.Scaffold\\WebApiScaffold\\TM.Scaffold.Project.sln");
 
 var classInfoDtos = await BuildClassInfoAsync(solution);
 var d = await BuildInvokeMapAsync(solution, classInfoDtos);
@@ -117,10 +118,45 @@ async Task<List<ClassInfoDto>> BuildInvokeMapAsync(Solution solution, List<Class
                         continue;
                     }
 
+                    //查找方法引用
+                    var references = await SymbolFinder.FindReferencesAsync(methodSymbol, solution);
+                    foreach(var item in references)
+                    {
+                        foreach(var location in item.Locations)
+                        {
+                            var document = location.Document;
+                            var syntaxRoot = await document.GetSyntaxRootAsync();
+                            var referencesSemanticModel = await document.GetSemanticModelAsync();
+
+                            // 获取引用节点（通常是 InvocationExpressionSyntax 或 IdentifierNameSyntax）
+                            var node = syntaxRoot.FindNode(location.Location.SourceSpan);
+
+                            var containingMember = node.Ancestors().OfType<MemberDeclarationSyntax>().FirstOrDefault();
+                            if (containingMember != null)
+                            {
+                                // 获取该成员的符号
+                                var memberSymbol = referencesSemanticModel?.GetDeclaredSymbol(containingMember);
+                                if (memberSymbol != null)
+                                {
+                                    var referencesMethodName = memberSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
+                                        .WithMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType | SymbolDisplayMemberOptions.IncludeParameters)
+                                        .WithParameterOptions(SymbolDisplayParameterOptions.IncludeType)
+                                    );
+                                    var referencesMethod = GetMethodById(classInfos, referencesMethodName);
+                                    if(referencesMethod != null)
+                                    {
+                                        methodDto.ReferenceList.Add(referencesMethod);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     var invocationExpressions = methodDecl.DescendantNodes()
                         .OfType<InvocationExpressionSyntax>()
                         .ToList();
 
+                    //查询调用方法列表
                     foreach (var invocation in invocationExpressions)
                     {
                         var symbolInfo = semanticModel.GetSymbolInfo(invocation.Expression);
