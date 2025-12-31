@@ -123,6 +123,9 @@ async Task<List<ClassInfoDto>> BuildInvokeMapAsync(Solution solution, List<Class
                         continue;
                     }
 
+                    //查找引用方法列表
+                    methodDto.ReferenceList = await GetReferencesMethodAsync(classInfos, methodSymbol);
+
                     //查询调用方法列表
                     var invocationExpressions = methodDecl.DescendantNodes()
                         .OfType<InvocationExpressionSyntax>()
