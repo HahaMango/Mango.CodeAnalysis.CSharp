@@ -5,6 +5,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.MSBuild;
 using System.Text;
+using System.Text.Json;
 
 MSBuildWorkspace workspace = MSBuildWorkspace.Create();
 // 注意：这里应该使用实际的解决方案路径
@@ -12,7 +13,11 @@ var solution = await workspace.OpenSolutionAsync("E:\\czhworks\\TM.Scaffold\\Web
 
 var classInfoDtos = await BuildClassInfoAsync(solution);
 var d = await BuildInvokeMapAsync(solution, classInfoDtos);
-var i = 0;
+
+var x = d[32..35];
+
+string json = JsonSerializer.Serialize(x, new JsonSerializerOptions { WriteIndented = true });
+await File.WriteAllTextAsync("test.json", json);
 
 //构建项目类结构
 async Task<List<ClassInfoDto>> BuildClassInfoAsync(Solution solution)
@@ -64,8 +69,8 @@ async Task<List<ClassInfoDto>> BuildClassInfoAsync(Solution solution)
                         ),
                         Comments = GetMethodComments(methodDecl),
                         MethodDefinition = FormatMethodDeclaration(methodDecl),
-                        InvocationList = new List<MethodInfoDto>(),
-                        ReferenceList = new List<MethodInfoDto>()
+                        InvocationList = [],
+                        ReferenceList = []
                     };
                     classDto.Methods.Add(methodDto);
                 }
@@ -99,8 +104,8 @@ async Task<List<ClassInfoDto>> BuildInvokeMapAsync(Solution solution, List<Class
 
                 var classSymbol = semanticModel.GetDeclaredSymbol(classDecl);
                 //根据完全限定名，查找当前类dto
-                var classDto = classInfos.FirstOrDefault(x=>x.Id == classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
-                if(classDto == null)
+                var classDto = classInfos.FirstOrDefault(x => x.Id == classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+                if (classDto == null)
                 {
                     continue;
                 }
@@ -111,18 +116,18 @@ async Task<List<ClassInfoDto>> BuildInvokeMapAsync(Solution solution, List<Class
                     var methodSymbol = semanticModel.GetDeclaredSymbol(methodDecl);
 
                     //根据完全限定名，查找当前方法dto
-                    var methodDto = classDto?.Methods.FirstOrDefault(x=>x.Id == methodSymbol?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType | SymbolDisplayMemberOptions.IncludeParameters)
+                    var methodDto = classDto?.Methods.FirstOrDefault(x => x.Id == methodSymbol?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType | SymbolDisplayMemberOptions.IncludeParameters)
                             .WithParameterOptions(SymbolDisplayParameterOptions.IncludeType)));
-                    if(methodDto == null)
+                    if (methodDto == null)
                     {
                         continue;
                     }
 
                     //查找方法引用
                     var references = await SymbolFinder.FindReferencesAsync(methodSymbol, solution);
-                    foreach(var item in references)
+                    foreach (var item in references)
                     {
-                        foreach(var location in item.Locations)
+                        foreach (var location in item.Locations)
                         {
                             var document = location.Document;
                             var syntaxRoot = await document.GetSyntaxRootAsync();
@@ -142,10 +147,21 @@ async Task<List<ClassInfoDto>> BuildInvokeMapAsync(Solution solution, List<Class
                                         .WithMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType | SymbolDisplayMemberOptions.IncludeParameters)
                                         .WithParameterOptions(SymbolDisplayParameterOptions.IncludeType)
                                     );
-                                    var referencesMethod = GetMethodById(classInfos, referencesMethodName);
-                                    if(referencesMethod != null)
+                                    if (methodDto.Id != referencesMethodName)
                                     {
-                                        methodDto.ReferenceList.Add(referencesMethod);
+                                        //引用方法名不等于当前方法名，防止循环引用
+                                        var referencesMethod = GetMethodById(classInfos, referencesMethodName);
+                                        if (referencesMethod != null)
+                                        {
+                                            methodDto.ReferenceList.Add(new ReferenceMethodInfoDto
+                                            {
+                                                Id = referencesMethod.Id,
+                                                Comments = referencesMethod.Comments,
+                                                MethodDefinition = referencesMethod.MethodDefinition,
+                                                SourceCode = referencesMethod.SourceCode,
+                                                ReferenceList = referencesMethod.ReferenceList
+                                            });
+                                        }
                                     }
                                 }
                             }
@@ -162,7 +178,7 @@ async Task<List<ClassInfoDto>> BuildInvokeMapAsync(Solution solution, List<Class
                         var symbolInfo = semanticModel.GetSymbolInfo(invocation.Expression);
                         if (symbolInfo.Symbol != null)
                         {
-                            var invokedMethodSymbol = (symbolInfo.Symbol as IMethodSymbol)?.ReducedFrom 
+                            var invokedMethodSymbol = (symbolInfo.Symbol as IMethodSymbol)?.ReducedFrom
                                             ?? symbolInfo.Symbol;
                             // 查找被调用方法的完全限定名
                             //var invokedMethodSymbol = symbolInfo.Symbol;
@@ -171,10 +187,21 @@ async Task<List<ClassInfoDto>> BuildInvokeMapAsync(Solution solution, List<Class
                                 .WithParameterOptions(SymbolDisplayParameterOptions.IncludeType)
                             );
 
-                            var invokedMethod = GetMethodById(classInfos, fullyQualifiedName);
-                            if(invokedMethod != null)
+                            if (methodDto.Id != fullyQualifiedName)
                             {
-                                methodDto.InvocationList.Add(invokedMethod);
+                                //调用方法名不等于当前方法名，防止循环引用
+                                var invokedMethod = GetMethodById(classInfos, fullyQualifiedName);
+                                if (invokedMethod != null)
+                                {
+                                    methodDto.InvocationList.Add(new InvocationMethodInfoDto
+                                    {
+                                        Id = invokedMethod.Id,
+                                        Comments = invokedMethod.Comments,
+                                        MethodDefinition = invokedMethod.MethodDefinition,
+                                        SourceCode = invokedMethod.SourceCode,
+                                        InvocationList = invokedMethod.InvocationList
+                                    });
+                                }
                             }
                         }
                     }
@@ -187,11 +214,11 @@ async Task<List<ClassInfoDto>> BuildInvokeMapAsync(Solution solution, List<Class
 
 MethodInfoDto GetMethodById(List<ClassInfoDto> classInfoDtos, string id)
 {
-    foreach(var classInfo in classInfoDtos)
+    foreach (var classInfo in classInfoDtos)
     {
-        foreach(var methodInfo in classInfo.Methods)
+        foreach (var methodInfo in classInfo.Methods)
         {
-            if(methodInfo.Id == id)
+            if (methodInfo.Id == id)
             {
                 return methodInfo;
             }
