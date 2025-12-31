@@ -14,7 +14,7 @@ var solution = await workspace.OpenSolutionAsync("E:\\czhworks\\TM.Scaffold\\Web
 var classInfoDtos = await BuildClassInfoAsync(solution);
 var d = await BuildInvokeMapAsync(solution, classInfoDtos);
 
-var x = d[32..35];
+var x = d;
 
 string json = JsonSerializer.Serialize(x, new JsonSerializerOptions { WriteIndented = true });
 await File.WriteAllTextAsync("test.json", json);
@@ -118,61 +118,16 @@ async Task<List<ClassInfoDto>> BuildInvokeMapAsync(Solution solution, List<Class
                     //根据完全限定名，查找当前方法dto
                     var methodDto = classDto?.Methods.FirstOrDefault(x => x.Id == methodSymbol?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType | SymbolDisplayMemberOptions.IncludeParameters)
                             .WithParameterOptions(SymbolDisplayParameterOptions.IncludeType)));
-                    if (methodDto == null)
+                    if (methodDto == null || methodDto.Id.Contains("Dispose"))
                     {
                         continue;
                     }
 
-                    //查找方法引用
-                    var references = await SymbolFinder.FindReferencesAsync(methodSymbol, solution);
-                    foreach (var item in references)
-                    {
-                        foreach (var location in item.Locations)
-                        {
-                            var document = location.Document;
-                            var syntaxRoot = await document.GetSyntaxRootAsync();
-                            var referencesSemanticModel = await document.GetSemanticModelAsync();
-
-                            // 获取引用节点（通常是 InvocationExpressionSyntax 或 IdentifierNameSyntax）
-                            var node = syntaxRoot.FindNode(location.Location.SourceSpan);
-
-                            var containingMember = node.Ancestors().OfType<MemberDeclarationSyntax>().FirstOrDefault();
-                            if (containingMember != null)
-                            {
-                                // 获取该成员的符号
-                                var memberSymbol = referencesSemanticModel?.GetDeclaredSymbol(containingMember);
-                                if (memberSymbol != null)
-                                {
-                                    var referencesMethodName = memberSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
-                                        .WithMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType | SymbolDisplayMemberOptions.IncludeParameters)
-                                        .WithParameterOptions(SymbolDisplayParameterOptions.IncludeType)
-                                    );
-                                    if (methodDto.Id != referencesMethodName)
-                                    {
-                                        //引用方法名不等于当前方法名，防止循环引用
-                                        var referencesMethod = GetMethodById(classInfos, referencesMethodName);
-                                        if (referencesMethod != null)
-                                        {
-                                            methodDto.ReferenceList.Add(new ReferenceMethodInfoDto
-                                            {
-                                                Id = referencesMethod.Id,
-                                                Comments = referencesMethod.Comments,
-                                                MethodDefinition = referencesMethod.MethodDefinition,
-                                                SourceCode = referencesMethod.SourceCode,
-                                                ReferenceList = referencesMethod.ReferenceList
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
+                    //查询调用方法列表
                     var invocationExpressions = methodDecl.DescendantNodes()
                         .OfType<InvocationExpressionSyntax>()
                         .ToList();
 
-                    //查询调用方法列表
                     foreach (var invocation in invocationExpressions)
                     {
                         var symbolInfo = semanticModel.GetSymbolInfo(invocation.Expression);
@@ -225,6 +180,52 @@ MethodInfoDto GetMethodById(List<ClassInfoDto> classInfoDtos, string id)
         }
     }
     return null;
+}
+
+async Task<List<ReferenceMethodInfoDto>> GetReferencesMethodAsync(List<ClassInfoDto> classInfos, IMethodSymbol methodSymbol)
+{
+    //查找方法引用
+    var references = await SymbolFinder.FindReferencesAsync(methodSymbol, solution);
+    var result = new List<ReferenceMethodInfoDto>();
+    foreach (var item in references)
+    {
+        foreach (var location in item.Locations)
+        {
+            var document = location.Document;
+            var syntaxRoot = await document.GetSyntaxRootAsync();
+            var referencesSemanticModel = await document.GetSemanticModelAsync();
+
+            // 获取引用节点（通常是 InvocationExpressionSyntax 或 IdentifierNameSyntax）
+            var node = syntaxRoot.FindNode(location.Location.SourceSpan);
+            var referencesExpressions = node.Ancestors().OfType<InvocationExpressionSyntax>().ToList();
+            foreach (var exp in referencesExpressions)
+            {
+                var containingMethod = exp.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+                if (containingMethod != null)
+                {
+                    var referencesMethodSymbol = referencesSemanticModel?.GetDeclaredSymbol(containingMethod);
+                    if (referencesMethodSymbol != null)
+                    {
+                        var referencesMethodName = referencesMethodSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
+                            .WithMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType | SymbolDisplayMemberOptions.IncludeParameters)
+                            .WithParameterOptions(SymbolDisplayParameterOptions.IncludeType)
+                        );
+
+                        var referencesMethod = GetMethodById(classInfos, referencesMethodName);
+                        result.Add(new ReferenceMethodInfoDto
+                        {
+                            Id = referencesMethod.Id,
+                            Comments = referencesMethod.Comments,
+                            MethodDefinition = referencesMethod.MethodDefinition,
+                            SourceCode = referencesMethod.SourceCode,
+                            ReferenceList = await GetReferencesMethodAsync(classInfos, referencesMethodSymbol)
+                        });
+                    }
+                }
+            }
+        }
+    }
+    return result;
 }
 
 string GetClassComments(ClassDeclarationSyntax classSyntax)
