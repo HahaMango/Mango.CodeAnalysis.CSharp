@@ -9,7 +9,7 @@ using System.Text.Json;
 
 MSBuildWorkspace workspace = MSBuildWorkspace.Create();
 // 注意：这里应该使用实际的解决方案路径
-var solution = await workspace.OpenSolutionAsync("E:\\czhworks\\TM.Scaffold\\WebApiScaffold\\TM.Scaffold.Project.sln");
+var solution = await workspace.OpenSolutionAsync("D:\\work\\TM.Scaffold\\WebApiScaffold\\TM.Scaffold.Project.sln");
 
 var classInfoDtos = await BuildClassInfoAsync(solution);
 var d = await BuildInvokeMapAsync(solution, classInfoDtos);
@@ -124,7 +124,7 @@ async Task<List<ClassInfoDto>> BuildInvokeMapAsync(Solution solution, List<Class
                     }
 
                     //查找引用方法列表
-                    methodDto.ReferenceList = await GetReferencesMethodAsync(classInfos, methodSymbol);
+                    methodDto.ReferenceList = await GetReferencesMethodAsync(classInfos, methodSymbol, new HashSet<string>());
 
                     //查询调用方法列表
                     var invocationExpressions = methodDecl.DescendantNodes()
@@ -185,8 +185,20 @@ MethodInfoDto GetMethodById(List<ClassInfoDto> classInfoDtos, string id)
     return null;
 }
 
-async Task<List<ReferenceMethodInfoDto>> GetReferencesMethodAsync(List<ClassInfoDto> classInfos, IMethodSymbol methodSymbol)
+async Task<List<ReferenceMethodInfoDto>> GetReferencesMethodAsync(List<ClassInfoDto> classInfos, IMethodSymbol methodSymbol, HashSet<string> visited = null)
 {
+    visited ??= new HashSet<string>();
+    
+    // 防止无限递归：如果方法已经访问过，直接返回空列表
+    if (visited.Contains(methodSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)))
+    {
+        return new List<ReferenceMethodInfoDto>();
+    }
+    
+    // 添加当前方法到已访问集合
+    visited.Add(methodSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+    
+    System.Console.WriteLine("执行递归查询引用方法");
     //查找方法引用
     var references = await SymbolFinder.FindReferencesAsync(methodSymbol, solution);
     var result = new List<ReferenceMethodInfoDto>();
@@ -215,14 +227,17 @@ async Task<List<ReferenceMethodInfoDto>> GetReferencesMethodAsync(List<ClassInfo
                         );
 
                         var referencesMethod = GetMethodById(classInfos, referencesMethodName);
-                        result.Add(new ReferenceMethodInfoDto
+                        if (referencesMethod != null)
                         {
-                            Id = referencesMethod.Id,
-                            Comments = referencesMethod.Comments,
-                            MethodDefinition = referencesMethod.MethodDefinition,
-                            SourceCode = referencesMethod.SourceCode,
-                            ReferenceList = await GetReferencesMethodAsync(classInfos, referencesMethodSymbol)
-                        });
+                            result.Add(new ReferenceMethodInfoDto
+                            {
+                                Id = referencesMethod.Id,
+                                Comments = referencesMethod.Comments,
+                                MethodDefinition = referencesMethod.MethodDefinition,
+                                SourceCode = referencesMethod.SourceCode,
+                                ReferenceList = await GetReferencesMethodAsync(classInfos, referencesMethodSymbol, visited)
+                            });
+                        }
                     }
                 }
             }
