@@ -16,8 +16,8 @@ var d = await BuildInvokeMapAsync(solution, classInfoDtos);
 
 var x = d;
 
-string json = JsonSerializer.Serialize(x, new JsonSerializerOptions { WriteIndented = true });
-await File.WriteAllTextAsync("test.json", json);
+string json = JsonSerializer.Serialize(x, new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping});
+await File.WriteAllTextAsync("test.json", json, Encoding.UTF8);
 
 //构建项目类结构
 async Task<List<ClassInfoDto>> BuildClassInfoAsync(Solution solution)
@@ -49,7 +49,7 @@ async Task<List<ClassInfoDto>> BuildClassInfoAsync(Solution solution)
                 var classDto = new ClassInfoDto
                 {
                     SourceCode = classSyntax.ToFullString(),
-                    Comments = GetClassComments(classSyntax),
+                    Comments = StrCleaning(GetClassComments(classSyntax)),
                     ClassDefinition = FormatClassDeclarationComplete(classSyntax),
                     Id = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                     Methods = new List<MethodInfoDto>()
@@ -67,7 +67,7 @@ async Task<List<ClassInfoDto>> BuildClassInfoAsync(Solution solution)
                             .WithMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType | SymbolDisplayMemberOptions.IncludeParameters)
                             .WithParameterOptions(SymbolDisplayParameterOptions.IncludeType)
                         ),
-                        Comments = GetMethodComments(methodDecl),
+                        Comments = StrCleaning(GetMethodComments(methodDecl)),
                         MethodDefinition = FormatMethodDeclaration(methodDecl),
                         InvocationList = [],
                         ReferenceList = []
@@ -340,4 +340,21 @@ string FormatMethodDeclaration(MethodDeclarationSyntax methodDecl)
     }
 
     return string.Join(" ", parts.Where(p => !string.IsNullOrEmpty(p)));
+}
+
+string StrCleaning(string comment)
+{
+    if (string.IsNullOrWhiteSpace(comment))
+        return string.Empty;
+
+    // 移除注释前的符号（如 ///, //, /*, */ 等）
+    var result = System.Text.RegularExpressions.Regex.Replace(comment, @"^[\s\*/]+|[\s\*/]+$", "", System.Text.RegularExpressions.RegexOptions.Multiline);
+    
+    // 移除 XML 标签
+    result = System.Text.RegularExpressions.Regex.Replace(result, @"<[^>]*>", string.Empty);
+    
+    // 移除多余的空白字符
+    result = System.Text.RegularExpressions.Regex.Replace(result, @"\s+", " ").Trim();
+    
+    return result;
 }
